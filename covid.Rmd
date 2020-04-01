@@ -1,0 +1,99 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(sf)
+```
+
+## Load the covid data
+
+First we'll load in the files from the NY Times Gihub repository.
+This data has daily totals for COVID cases and deaths both by state and by county.
+
+```{r}
+state_cdf <- read_csv("covid-19-data/us-states.csv")
+county_cdf <- read_csv("covid-19-data/us-counties.csv")
+```
+
+## State and county maps
+
+We'll  also use the `USAboundaries` package to get maps for states and counties.
+```{r, eval=FALSE}
+install.packages("USAboundaries")  # see below
+state_sf <- USAboundaries::us_states() %>%
+  rename(fips = statefp)
+county_sf <- USAboundaries::us_counties() %>%
+  unite("fips", statefp:countyfp, sep = "")
+```
+Note, that I'm configuring each dataset so that they each have a `fips` column that you can use to join the data.
+
+If the USA boundaries package doesn't work properly, you can download shapefiles for US states counties from the [census]( https://www.census.gov/cgi-bin/geo/shapefiles/index.php). Select the Layer type to be "Counties (or equivalent)" to get counties.
+You can do the same for the states by downloading the layer type "States (or equivalent)".
+Put the zip files in this folder and unzip them and make sure the unzipped files are in a folder called `tl_2019_us_county` and `tl_2019_us_state`.
+
+__QUESTION__: How could you get the state map from the county map?
+
+Now we can load the shape files.
+```{r}
+county_sf <- sf::read_sf("tl_2019_us_county/tl_2019_us_county.shp") %>%
+  unite("fips", STATEFP:COUNTYFP, sep = "")
+state_sf <- sf::read_sf("tl_2019_us_state/tl_2019_us_state.shp") %>%
+  rename(fips = STATEFP)
+```
+
+The county data is not quite the same as the `USAboundaries` data but each will work well.
+
+
+## Pulling in US Census data
+
+Finally, let's pull in some census data. First, you'll need a key which is [easy to get](https://api.census.gov/data/key_signup.html).
+Once you have your key, install the `tidycensus` package and register your key.
+
+
+
+```{r, eval=FALSE}
+install.packages("tidycensus")
+tidycensus::census_api_key("REPLACE YOUR KEY HERE")
+```
+
+First, we need to find the variable that we're looking for.
+Download the variable list for the ACS 5-year from 2018 and view it in RStudio.
+```{r}
+v18 <- tidycensus::load_variables(2018, "acs5", cache = TRUE)
+View(v18)
+```
+
+You can search for variables using the search bar in the viewer (upper right of the panel).
+The variable for population is B01001_001 so let's download that.
+
+```{r}
+state_pop <- tidycensus::get_acs("state", "B01001_001") %>%
+  rename(fips = GEOID, population = estimate)
+county_pop <- tidycensus::get_acs("county", "B01001_001") %>%
+  rename(fips = GEOID, population = estimate)
+```
+
+Again, I've renamed `GEOID` as `fips` to ensure easy joins.
+
+Feel free to search for other variables in the `v18` table and download those in the same way.
+
+## Putting it together
+
+Now its your turn.
+
+See what you can find out and try making some maps.
+I would encourage you to first look at state data since its smaller and then jump into the county level data.
+As a group think of some questions that you might be interested in and try to answer them.
+
+Here's a quick example,
+```{r}
+state_cdf %>% filter(date == max(date)) %>%
+  left_join(state_pop %>% select(fips, population)) %>%
+  arrange(desc(cases))
+```
